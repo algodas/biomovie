@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>🧠 Identificação Biométrica em Vídeo</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(to bottom right, #e6f0ff, #cce0ff); margin: 0; padding: 0; color: #333; }
+    .container { max-width: 960px; margin: 40px auto; padding: 20px; }
+    h1 { text-align: center; color: #004080; margin-bottom: 10px; }
+    .descricao { text-align: center; color: #333; margin-bottom: 30px; font-size: 1rem; line-height: 1.5; }
+    form { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1); margin-bottom: 40px; }
+    .drop-section { display: flex; flex-wrap: wrap; gap: 20px; justify-content: space-between; margin-bottom: 20px; }
+    .drop-box { flex: 1 1 45%; border: 2px dashed #4da6ff; border-radius: 10px; padding: 30px; text-align: center; background-color: #f9fbff; cursor: pointer; transition: background-color 0.2s ease; min-height: 150px; }
+    .drop-box:hover { background-color: #edf5ff; }
+    .drop-box input[type='file'] { display: none; }
+    .drop-box p { font-size: 1.1em; color: #004080; }
+    button { width: 100%; padding: 14px; font-size: 16px; background-color: #4da6ff; border: none; border-radius: 8px; color: white; cursor: pointer; }
+    button:hover { background-color: #3399ff; }
+    .card { background: #fff; border-radius: 10px; padding: 15px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1); }
+    .match { border-left: 6px solid #4caf50; }
+    .score { font-weight: bold; margin-bottom: 10px; color: #333; }
+    .images { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+    img { max-width: 180px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05); }
+    #progress-bar-container { display: none; margin-top: 20px; text-align: center; }
+    .progress-bar-wrapper { width: 100%; background-color: #dbefff; border-radius: 8px; overflow: hidden; height: 14px; margin-top: 8px; position: relative; }
+    .progress-bar { width: 0%; height: 100%; background-color: #4da6ff; animation: progressIndeterminate 2s linear infinite; }
+    @keyframes progressIndeterminate { 0% { width: 0%; } 50% { width: 75%; } 100% { width: 0%; } }
+    .file-status { margin-top: 8px; font-size: 0.9em; color: green; }
+    .cancel-btn { background: red; color: white; border: none; padding: 8px 12px; margin-top: 10px; cursor: pointer; border-radius: 6px; }
+    .cancel-btn:hover { background: darkred; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧠 Identificação Biométrica em Vídeo</h1>
+    <div class="descricao">O sistema processa o vídeo em blocos e exibe correspondências conforme encontradas.</div>
+
+    <form method="POST" enctype="multipart/form-data" id="uploadForm" action="/deep/process">
+      <div class="drop-section">
+        <label class="drop-box" for="photo">
+          <p>📸 Foto de referência</p>
+          <input type="file" name="photo" id="photo" accept="image/*" required />
+          <div class="file-status" id="photo-status"></div>
+        </label>
+        <label class="drop-box" for="video">
+          <p>🎥 Vídeo para análise</p>
+          <input type="file" name="video" id="video" accept="video/mp4" required />
+          <div class="file-status" id="video-status"></div>
+        </label>
+      </div>
+      <button type="submit">🔍 Comparar Faces</button>
+    </form>
+
+    <div id="progress-bar-container">
+      <div style="color: #004080; font-size: 14px" id="progress-text">⏳ Aguardando início do processamento...</div>
+      <div class="progress-bar-wrapper"><div class="progress-bar"></div></div>
+      <button class="cancel-btn" onclick="cancelProcess()">Cancelar</button>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <script>
+    function cancelProcess() {
+      fetch("/deep/cancel", { method: "POST" });
+      document.getElementById("progress-text").textContent = "Cancelando...";
+      const bar = document.querySelector(".progress-bar");
+      bar.style.animation = "none";
+      bar.style.backgroundColor = "red";
+    }
+
+    document.getElementById("photo").addEventListener("change", function () {
+      document.getElementById("photo-status").textContent = this.files[0] ? "✅ Foto carregada: " + this.files[0].name : "";
+    });
+
+    document.getElementById("video").addEventListener("change", function () {
+      document.getElementById("video-status").textContent = this.files[0] ? "✅ Vídeo carregado: " + this.files[0].name : "";
+    });
+
+    document.getElementById("uploadForm").addEventListener("submit", function (e) {
+      e.preventDefault();
+
+      // ✅ Limpar resultados anteriores
+      document.getElementById("results").innerHTML = "";
+
+      // ✅ Resetar barra de progresso
+      const bar = document.querySelector(".progress-bar");
+      bar.style.width = "0%";
+      bar.style.backgroundColor = "#4da6ff";
+      bar.style.animation = "progressIndeterminate 2s linear infinite";
+
+      document.getElementById("progress-bar-container").style.display = "block";
+      document.getElementById("progress-text").textContent = "⏳ Iniciando processamento...";
+
+      const formData = new FormData(this);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/deep/process");
+      xhr.setRequestHeader("Accept", "text/event-stream");
+
+      xhr.onprogress = function () {
+        const responses = xhr.responseText.trim().split("\n\n");
+        responses.forEach(r => {
+          if (!r.startsWith("data:")) return;
+          const data = JSON.parse(r.replace("data: ", ""));
+          if (data.progress) {
+            document.getElementById("progress-text").textContent = data.progress;
+            if (data.progress.includes("Finalizado")) {
+              bar.style.animation = "none";
+              bar.style.width = "100%";
+              bar.style.backgroundColor = "green";
+            }
+            if (data.progress.includes("Cancelado") || data.progress.includes("Nenhuma face")) {
+              bar.style.animation = "none";
+              bar.style.width = "100%";
+              bar.style.backgroundColor = "red";
+            }
+          }
+          if (data.matches) {
+            const container = document.getElementById("results");
+            data.matches.forEach(face => {
+              container.innerHTML += `
+                <div class="card match">
+                  <div class="score">Similaridade: ${face.similarity.toFixed(2)}% | Distância: ${face.score.toFixed(4)}</div>
+                  ${face.observacao ? `<div style="color: orange; font-weight: bold;">⚠️ Notação encontrada</div>` : ""}
+                  <div class="images">
+                    <div><p>Referência</p><img src="data:image/jpeg;base64,${face.ref_base64}"></div>
+                    <div><p>Vídeo - Frame ${face.frame}</p><img src="data:image/jpeg;base64,${face.video_base64}"></div>
+                  </div>
+                </div>`;
+            });
+          }
+        });
+      };
+      xhr.send(formData);
+    });
+  </script>
+</body>
+</html>
+ 
